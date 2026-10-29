@@ -30,6 +30,8 @@
 #ifndef ROVIO_ROVIONODE_HPP_
 #define ROVIO_ROVIONODE_HPP_
 
+#include <fstream>
+#include <iomanip>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -124,6 +126,7 @@ public:
   FilterInitializationState init_state_;
 
   bool forceOdometryPublishing_;
+  std::ofstream trajectory_file_;  // tartanstar: optional `~trajectory_file` output
   bool forcePoseWithCovariancePublishing_;
   bool forceTransformPublishing_;
   bool forceExtrinsicsPublishing_;
@@ -294,6 +297,11 @@ public:
     nh_private_.param("world_frame", world_frame_, world_frame_);
     nh_private_.param("camera_frame", camera_frame_, camera_frame_);
     nh_private_.param("imu_frame", imu_frame_, imu_frame_);
+
+    // tartanstar: write every odometry output to a file (topics have queue size 1 and drop messages offline)
+    std::string trajectory_file;
+    if (nh_private_.getParam("trajectory_file", trajectory_file) && !trajectory_file.empty())
+      trajectory_file_.open(trajectory_file);
 
     // Initialize messages
     transformMsg_.header.frame_id = world_frame_;
@@ -1025,6 +1033,17 @@ public:
             }
           }
           pubOdometry_.publish(odometryMsg_);
+
+          // tartanstar: "t px py pz qx qy qz qw vx vy vz", same frames as ~rovio/odometry (velocity in body frame)
+          if (trajectory_file_.is_open())
+          {
+            const auto& p = odometryMsg_.pose.pose.position;
+            const auto& q = odometryMsg_.pose.pose.orientation;
+            const auto& v = odometryMsg_.twist.twist.linear;
+            trajectory_file_ << std::fixed << std::setprecision(9) << odometryMsg_.header.stamp.toSec() << " " << p.x
+                             << " " << p.y << " " << p.z << " " << q.x << " " << q.y << " " << q.z << " " << q.w << " "
+                             << v.x << " " << v.y << " " << v.z << "\n";
+          }
         }
 
         if (pubPoseWithCovStamped_.getNumSubscribers() > 0 || forcePoseWithCovariancePublishing_)
